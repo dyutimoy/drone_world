@@ -50,16 +50,8 @@ def main():
             action = env.actions.right
         elif keyName == 'UP':
             action = env.actions.forward
-
-        elif keyName == 'SPACE':
-            action = env.actions.toggle
-        elif keyName == 'PAGE_UP':
-            action = env.actions.pickup
-        elif keyName == 'PAGE_DOWN':
-            action = env.actions.drop
-
-        elif keyName == 'RETURN':
-            action = env.actions.done
+        elif keyName == 'DOWN':
+            action = env.actions.downward
 
         else:
             print("unknown key %s" % keyName)
