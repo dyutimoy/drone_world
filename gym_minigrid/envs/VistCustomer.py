@@ -49,7 +49,7 @@ class VistCustomer(MiniGridEnv):
 
                 # If this object already exists, try again
         obj = Customer(objColor)
-        """
+        
         pos = self.place_obj(obj)
         pos = self.place_obj(obj)
         pos = self.place_obj(obj)
@@ -57,7 +57,7 @@ class VistCustomer(MiniGridEnv):
         pos = self.place_obj_det(obj,3,3)
         pos = self.place_obj_det(obj,2,7)
         pos = self.place_obj_det(obj,4,6)
-
+        """
 
         objType='goal'
         objColor = 'green'

@@ -853,7 +853,7 @@ class MiniGridEnv(gym.Env):
         Compute the reward to be given upon success
         """
 
-        return 100* (20** (-10*(self.step_count/ self.max_steps)))
+        return 1-self.step_count/ self.max_steps
 
     def _rand_int(self, low, high):
         """
@@ -1150,7 +1150,7 @@ class MiniGridEnv(gym.Env):
                 self.agent_pos = lft_pos
             if lft_cell != None and lft_cell.type == 'goal':
                 done = True
-                reward = self._reward()*0.5
+                reward = self._reward()*0.2
             if lft_cell != None and lft_cell.type == 'customer':
                 self.grid.set(*lft_pos, None)
                 #done = True
@@ -1162,7 +1162,7 @@ class MiniGridEnv(gym.Env):
                 self.agent_pos = rgt_pos
             if rgt_cell != None and rgt_cell.type == 'goal':
                 done = True
-                reward = self._reward()
+                reward = self._reward()*0.2
             if rgt_cell != None and rgt_cell.type == 'customer':
                 self.grid.set(*rgt_pos, None)
                 #done = True
@@ -1174,7 +1174,7 @@ class MiniGridEnv(gym.Env):
                 self.agent_pos = fwd_pos
             if fwd_cell != None and fwd_cell.type == 'goal':
                 done = True
-                reward = self._reward()
+                reward = self._reward()*0.2
             if fwd_cell != None and fwd_cell.type == 'customer':
                 #done = True
                 self.grid.set(*fwd_pos, None)
@@ -1185,7 +1185,7 @@ class MiniGridEnv(gym.Env):
                 self.agent_pos = dwn_pos
             if dwn_cell != None and dwn_cell.type == 'goal':
                 done = True
-                reward = self._reward()
+                reward = self._reward()*0.2
             if dwn_cell != None and dwn_cell.type == 'customer':
                 #done = True
                 self.grid.set(*dwn_pos, None)
@@ -1213,7 +1213,7 @@ class MiniGridEnv(gym.Env):
             assert False, "unknown action"
         """
         if self.step_count >= self.max_steps:
-            reward = -10#self._reward()-1
+            reward = -3#self._reward()-1
             done = True
 
         obs = self.gen_obs()
