@@ -1,4 +1,4 @@
-from gym_minigrid.minigrid import *
+from gym_minigrid.minigridnew import *
 from gym_minigrid.register import register
 
 class VistCustomer(MiniGridEnv):
@@ -9,14 +9,15 @@ class VistCustomer(MiniGridEnv):
 
     def __init__(
         self,
-        size=10,
+        size=20,
         numObjs=4
     ):
         self.numObjs=numObjs
-
+        self.size=size
         super().__init__(
             grid_size=size,
             max_steps=20*size,
+            max_endu=size*3,
             see_through_walls=True   #see what it means
         )
 
@@ -49,10 +50,11 @@ class VistCustomer(MiniGridEnv):
 
                 # If this object already exists, try again
         obj = Customer(objColor)
-        
-        pos = self.place_obj(obj)
-        pos = self.place_obj(obj)
-        pos = self.place_obj(obj)
+
+        while len(objs) < self.numObjs:
+
+            pos = self.place_obj(obj,reject_fn=near_obj)
+            objs.append((objType, objColor))
         """
         pos = self.place_obj_det(obj,3,3)
         pos = self.place_obj_det(obj,2,7)
@@ -62,14 +64,12 @@ class VistCustomer(MiniGridEnv):
         objType='goal'
         objColor = 'green'
         obj = Goal()
-        pos = self.place_obj_det(obj,8,8)
-
-
-
+        pos = self.place_obj_det(obj,self.size-2,self.size-2)
 
         self.place_agent()
+        #self.place_drone()
 
-        self.mission='Pick all objects'
+        self.mission='deliver to all customers'
 
     def step(self, action):
 

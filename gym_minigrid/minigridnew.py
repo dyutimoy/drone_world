@@ -9,10 +9,9 @@ from gym.utils import seeding
 CELL_PIXELS = 32
 
 # Number of cells (width and height) in the agent view
-AGENT_VIEW_SIZE = 7
+AGENT_VIEW_SIZE = 30
 
-# Size of the array given as an observation to the agent
-OBS_ARRAY_SIZE = (AGENT_VIEW_SIZE, AGENT_VIEW_SIZE, 3)
+
 
 # Map of color names to RGB values
 COLORS = {
@@ -40,31 +39,22 @@ IDX_TO_COLOR = dict(zip(COLOR_TO_IDX.values(), COLOR_TO_IDX.keys()))
 
 # Map of object type to integers
 OBJECT_TO_IDX = {
-    'unseen'        : 0,
-    'empty'         : 1,
-    'wall'          : 2,
-    'floor'         : 3,
-    'door'          : 4,
+    'empty'         : 0,
+    'wall'          : 1,
+    'floor'         : 2,
+    'door'          : 3,
+    'locked_door'   : 4,
     'key'           : 5,
     'ball'          : 6,
     'box'           : 7,
     'goal'          : 8,
-    'lava'          : 9
+    'customer'      : 9
 }
 
 IDX_TO_OBJECT = dict(zip(OBJECT_TO_IDX.values(), OBJECT_TO_IDX.keys()))
 
 # Map of agent direction indices to vectors
-DIR_TO_VEC = [
-    # Pointing right (positive X)
-    np.array((1, 0)),
-    # Down (positive Y)
-    np.array((0, 1)),
-    # Pointing left (negative X)
-    np.array((-1, 0)),
-    # Up (negative Y)
-    np.array((0, -1)),
-]
+
 
 class WorldObj:
     """
@@ -88,12 +78,19 @@ class WorldObj:
         """Can the agent overlap with this?"""
         return False
 
+    def can_flyover(self):
+        """Can a=the agent fly over? """
+        return False
+
     def can_pickup(self):
         """Can the agent pick this up?"""
         return False
 
     def can_contain(self):
         """Can this contain another object?"""
+        return False
+    def can_visit(self):
+        """can collect it"""
         return False
 
     def see_behind(self):
@@ -152,52 +149,28 @@ class Floor(WorldObj):
             (CELL_PIXELS,           1),
             (1          ,           1)
         ])
+class House(WorldObj):
+    """
+    Colored floor tile the agent can walk over
+    """
 
-class Lava(WorldObj):
-    def __init__(self):
-        super().__init__('lava', 'red')
+    def __init__(self, color='yellow'):
+        super().__init__('floor', color)
 
     def can_overlap(self):
-        return True
+        return False
 
     def render(self, r):
-        orange = 255, 128, 0
-        r.setLineColor(*orange)
-        r.setColor(*orange)
+        # Give the floor a pale color
+        c = COLORS[self.color]
+        r.setLineColor(100, 100, 100, 0)
+        r.setColor(*c)
         r.drawPolygon([
-            (0          , CELL_PIXELS),
+            (1          , CELL_PIXELS),
             (CELL_PIXELS, CELL_PIXELS),
-            (CELL_PIXELS, 0),
-            (0          , 0)
+            (CELL_PIXELS,           1),
+            (1          ,           1)
         ])
-
-        # drawing the waves
-        r.setLineColor(0, 0, 0)
-
-        r.drawPolyline([
-            (.1 * CELL_PIXELS, .3 * CELL_PIXELS),
-            (.3 * CELL_PIXELS, .4 * CELL_PIXELS),
-            (.5 * CELL_PIXELS, .3 * CELL_PIXELS),
-            (.7 * CELL_PIXELS, .4 * CELL_PIXELS),
-            (.9 * CELL_PIXELS, .3 * CELL_PIXELS),
-        ])
-
-        r.drawPolyline([
-            (.1 * CELL_PIXELS, .5 * CELL_PIXELS),
-            (.3 * CELL_PIXELS, .6 * CELL_PIXELS),
-            (.5 * CELL_PIXELS, .5 * CELL_PIXELS),
-            (.7 * CELL_PIXELS, .6 * CELL_PIXELS),
-            (.9 * CELL_PIXELS, .5 * CELL_PIXELS),
-        ])
-
-        r.drawPolyline([
-            (.1 * CELL_PIXELS, .7 * CELL_PIXELS),
-            (.3 * CELL_PIXELS, .8 * CELL_PIXELS),
-            (.5 * CELL_PIXELS, .7 * CELL_PIXELS),
-            (.7 * CELL_PIXELS, .8 * CELL_PIXELS),
-            (.9 * CELL_PIXELS, .7 * CELL_PIXELS),
-        ])
-
 class Wall(WorldObj):
     def __init__(self, color='grey'):
         super().__init__('wall', color)
@@ -213,12 +186,10 @@ class Wall(WorldObj):
             (CELL_PIXELS,           0),
             (0          ,           0)
         ])
-
 class Door(WorldObj):
-    def __init__(self, color, is_open=False, is_locked=False):
+    def __init__(self, color, is_open=False):
         super().__init__('door', color)
         self.is_open = is_open
-        self.is_locked = is_locked
 
     def can_overlap(self):
         """The agent can only walk over this cell when the door is open"""
@@ -228,21 +199,13 @@ class Door(WorldObj):
         return self.is_open
 
     def toggle(self, env, pos):
-        # If the player has the right key to open the door
-        if self.is_locked:
-            if isinstance(env.carrying, Key) and env.carrying.color == self.color:
-                self.is_locked = False
-                self.is_open = True
-                return True
-            return False
-
         self.is_open = not self.is_open
         return True
 
     def render(self, r):
         c = COLORS[self.color]
         r.setLineColor(c[0], c[1], c[2])
-        r.setColor(c[0], c[1], c[2], 50 if self.is_locked else 0)
+        r.setColor(0, 0, 0)
 
         if self.is_open:
             r.drawPolygon([
@@ -260,24 +223,65 @@ class Door(WorldObj):
             (0          ,           0)
         ])
         r.drawPolygon([
-            (2            , CELL_PIXELS-2),
+            (2          , CELL_PIXELS-2),
             (CELL_PIXELS-2, CELL_PIXELS-2),
             (CELL_PIXELS-2,           2),
-            (2            ,           2)
+            (2          ,           2)
         ])
+        r.drawCircle(CELL_PIXELS * 0.75, CELL_PIXELS * 0.5, 2)
+class LockedDoor(WorldObj):
+    def __init__(self, color, is_open=False):
+        super(LockedDoor, self).__init__('locked_door', color)
+        self.is_open = is_open
 
-        if self.is_locked:
-            # Draw key slot
-            r.drawLine(
-                CELL_PIXELS * 0.55,
-                CELL_PIXELS * 0.5,
-                CELL_PIXELS * 0.75,
-                CELL_PIXELS * 0.5
-            )
-        else:
-            # Draw door handle
-            r.drawCircle(CELL_PIXELS * 0.75, CELL_PIXELS * 0.5, 2)
+    def toggle(self, env, pos):
+        # If the player has the right key to open the door
+        if isinstance(env.carrying, Key) and env.carrying.color == self.color:
+            self.is_open = True
+            # The key has been used, remove it from the agent
+            env.carrying = None
+            return True
+        return False
 
+    def can_overlap(self):
+        """The agent can only walk over this cell when the door is open"""
+        return self.is_open
+
+    def see_behind(self):
+        return self.is_open
+
+    def render(self, r):
+        c = COLORS[self.color]
+        r.setLineColor(c[0], c[1], c[2])
+        r.setColor(c[0], c[1], c[2], 50)
+
+        if self.is_open:
+            r.drawPolygon([
+                (CELL_PIXELS-2, CELL_PIXELS),
+                (CELL_PIXELS  , CELL_PIXELS),
+                (CELL_PIXELS  ,           0),
+                (CELL_PIXELS-2,           0)
+            ])
+            return
+
+        r.drawPolygon([
+            (0          , CELL_PIXELS),
+            (CELL_PIXELS, CELL_PIXELS),
+            (CELL_PIXELS,           0),
+            (0          ,           0)
+        ])
+        r.drawPolygon([
+            (2          , CELL_PIXELS-2),
+            (CELL_PIXELS-2, CELL_PIXELS-2),
+            (CELL_PIXELS-2,           2),
+            (2          ,           2)
+        ])
+        r.drawLine(
+            CELL_PIXELS * 0.55,
+            CELL_PIXELS * 0.5,
+            CELL_PIXELS * 0.75,
+            CELL_PIXELS * 0.5
+        )
 class Key(WorldObj):
     def __init__(self, color='blue'):
         super(Key, self).__init__('key', color)
@@ -314,7 +318,6 @@ class Key(WorldObj):
         r.setLineColor(0, 0, 0)
         r.setColor(0, 0, 0)
         r.drawCircle(18, 9, 2)
-
 class Ball(WorldObj):
     def __init__(self, color='blue'):
         super(Ball, self).__init__('ball', color)
@@ -325,6 +328,23 @@ class Ball(WorldObj):
     def render(self, r):
         self._set_color(r)
         r.drawCircle(CELL_PIXELS * 0.5, CELL_PIXELS * 0.5, 10)
+
+class Customer(WorldObj):
+    def __init__(self, color='red'):
+        super(Customer, self).__init__('customer', color)
+
+    def can_overlap(self):
+        return True
+
+    def render(self, r):
+        self._set_color(r)
+        r.drawCircle(CELL_PIXELS * 0.5, CELL_PIXELS * 0.5, 10)
+        r.drawPolygon([
+            (4            , CELL_PIXELS-4),
+            (CELL_PIXELS-4, CELL_PIXELS-4),
+            (CELL_PIXELS-4,             4),
+            (4            ,             4)
+        ])
 
 class Box(WorldObj):
     def __init__(self, color, contains=None):
@@ -435,12 +455,12 @@ class Grid:
         Rotate the grid to the left (counter-clockwise)
         """
 
-        grid = Grid(self.height, self.width)
+        grid = Grid(self.width, self.height)
 
-        for i in range(self.width):
-            for j in range(self.height):
-                v = self.get(i, j)
-                grid.set(j, grid.height - 1 - i, v)
+        for j in range(0, self.height):
+            for i in range(0, self.width):
+                v = self.get(self.width - 1 - j, i)
+                grid.set(i, j, v)
 
         return grid
 
@@ -517,123 +537,37 @@ class Grid:
 
         r.pop()
 
-    def encode(self, vis_mask=None):
+    def encode(self,agent_pos,drone_pos):
         """
         Produce a compact numpy encoding of the grid
         """
 
-        if vis_mask is None:
-            vis_mask = np.ones((self.width, self.height), dtype=bool)
+        codeSize = self.width * self.height * 3
 
-        array = np.zeros((self.width, self.height, 3), dtype='uint8')
-        for i in range(self.width):
-            for j in range(self.height):
-                if vis_mask[i, j]:
-                    v = self.get(i, j)
+        array = np.zeros(shape=(self.width, self.height, 3), dtype='uint8')
 
-                    if v is None:
-                        array[i, j, 0] = OBJECT_TO_IDX['empty']
-                        array[i, j, 1] = 0
-                        array[i, j, 2] = 0
-                    else:
-                        # State, 0: open, 1: closed, 2: locked
-                        state = 0
-                        if hasattr(v, 'is_open') and not v.is_open:
-                            state = 1
-                        if hasattr(v, 'is_locked') and v.is_locked:
-                            state = 2
+        for j in range(0, self.height):
+            for i in range(0, self.width):
 
-                        array[i, j, 0] = OBJECT_TO_IDX[v.type]
-                        array[i, j, 1] = COLOR_TO_IDX[v.color]
-                        array[i, j, 2] = state
+                v = self.get(i, j)
+
+                if v == None:
+                    continue
+
+                array[i, j, 0] = OBJECT_TO_IDX[v.type]
+                array[i, j, 1] = COLOR_TO_IDX[v.color]
+
+        array[agent_pos[0],agent_pos[1],0]=10
+        array[agent_pos[0],agent_pos[1],1]=10
+        array[drone_pos[0],drone_pos[1],0]=15
+        array[drone_pos[0],drone_pos[1],1]=15
+
+
 
         return array
 
-    @staticmethod
-    def decode(array):
-        """
-        Decode an array grid encoding back into a grid
-        """
 
-        width, height, channels = array.shape
-        assert channels == 3
 
-        grid = Grid(width, height)
-        for i in range(width):
-            for j in range(height):
-                typeIdx, colorIdx, state = array[i, j]
-
-                if typeIdx == OBJECT_TO_IDX['unseen'] or \
-                        typeIdx == OBJECT_TO_IDX['empty']:
-                    continue
-
-                objType = IDX_TO_OBJECT[typeIdx]
-                color = IDX_TO_COLOR[colorIdx]
-                # State, 0: open, 1: closed, 2: locked
-                is_open = state == 0
-                is_locked = state == 2
-
-                if objType == 'wall':
-                    v = Wall(color)
-                elif objType == 'floor':
-                    v = Floor(color)
-                elif objType == 'ball':
-                    v = Ball(color)
-                elif objType == 'key':
-                    v = Key(color)
-                elif objType == 'box':
-                    v = Box(color)
-                elif objType == 'door':
-                    v = Door(color, is_open, is_locked)
-                elif objType == 'goal':
-                    v = Goal()
-                elif objType == 'lava':
-                    v = Lava()
-                else:
-                    assert False, "unknown obj type in decode '%s'" % objType
-
-                grid.set(i, j, v)
-
-        return grid
-
-    def process_vis(grid, agent_pos):
-        mask = np.zeros(shape=(grid.width, grid.height), dtype=np.bool)
-
-        mask[agent_pos[0], agent_pos[1]] = True
-
-        for j in reversed(range(0, grid.height)):
-            for i in range(0, grid.width-1):
-                if not mask[i, j]:
-                    continue
-
-                cell = grid.get(i, j)
-                if cell and not cell.see_behind():
-                    continue
-
-                mask[i+1, j] = True
-                if j > 0:
-                    mask[i+1, j-1] = True
-                    mask[i, j-1] = True
-
-            for i in reversed(range(1, grid.width)):
-                if not mask[i, j]:
-                    continue
-
-                cell = grid.get(i, j)
-                if cell and not cell.see_behind():
-                    continue
-
-                mask[i-1, j] = True
-                if j > 0:
-                    mask[i-1, j-1] = True
-                    mask[i, j-1] = True
-
-        for j in range(0, grid.height):
-            for i in range(0, grid.width):
-                if not mask[i, j]:
-                    grid.set(i, j, None)
-
-        return mask
 
 class MiniGridEnv(gym.Env):
     """
@@ -651,21 +585,25 @@ class MiniGridEnv(gym.Env):
         left = 0
         right = 1
         forward = 2
-
+        downward=3
+        stop=5
         # Pick up an object
-        pickup = 3
+        #pickup = 3
         # Drop an object
-        drop = 4
+        #drop = 4
         # Toggle/activate an object
-        toggle = 5
+        #toggle = 5
+        #visit Customer
+        #visit=4
 
         # Done completing task
-        done = 6
+        #done = 5
 
     def __init__(
         self,
         grid_size=16,
         max_steps=100,
+        max_endu=40,
         see_through_walls=False,
         seed=1337
     ):
@@ -680,34 +618,40 @@ class MiniGridEnv(gym.Env):
         self.observation_space = spaces.Box(
             low=0,
             high=255,
-            shape=OBS_ARRAY_SIZE,
-            dtype='uint8'
+            shape=(grid_size,grid_size,3),
+            dtype=np.uint8
         )
-        self.observation_space = spaces.Dict({
-            'image': self.observation_space
-        })
+        #print(self.observation_space.shape)
+        #self.oservation_space = spaces.Dict({
+        #    'image': self.observation_space
+        #})
 
         # Range of possible rewards
-        self.reward_range = (0, 1)
+        self.reward_range = (-4, 1)
 
         # Renderer object used to render the whole grid (full-scale)
         self.grid_render = None
 
-        # Renderer used to render observations (small-scale agent view)
-        self.obs_render = None
 
         # Environment configuration
         self.grid_size = grid_size
         self.max_steps = max_steps
+        self.max_endu=max_endu
         self.see_through_walls = see_through_walls
 
         # Starting position and direction for the agent
         self.start_pos = None
-        self.start_dir = None
-
+        # Starting point of dorne
+        self.start_dpos = None
+        self.drone_endu = self.max_steps
         # Initialize the RNG
+
+        # Drone package limit
+        self.pack=0
         self.seed(seed=seed)
 
+        self.done_truck=None
+        self.done_drone=None
         # Initialize the state
         self.reset()
 
@@ -719,15 +663,20 @@ class MiniGridEnv(gym.Env):
 
         # These fields should be defined by _gen_grid
         assert self.start_pos is not None
-        assert self.start_dir is not None
+        #assert self.start_dir is not None
+        assert self.start_dpos is not None
 
         # Check that the agent doesn't overlap with an object
         start_cell = self.grid.get(*self.start_pos)
         assert start_cell is None or start_cell.can_overlap()
 
+        start_dcell= self.grid.get(*self.start_dpos)
+        assert start_dcell is None or start_dcell.can_overlap()
+
         # Place the agent in the starting position and direction
         self.agent_pos = self.start_pos
-        self.agent_dir = self.start_dir
+        self.drone_pos= self.start_dpos
+        #self.agent_dir = self.start_dir
 
         # Item picked up, being carried, initially nothing
         self.carrying = None
@@ -735,6 +684,14 @@ class MiniGridEnv(gym.Env):
         # Step count since episode start
         self.step_count = 0
 
+        self.drone_endu = self.max_endu
+        # Initialize the RNG
+
+        # Drone package limit
+        self.pack=0
+
+        self.done_truck=0
+        self.done_drone=0
         # Return first observation
         obs = self.gen_obs()
         return obs
@@ -748,67 +705,6 @@ class MiniGridEnv(gym.Env):
     def steps_remaining(self):
         return self.max_steps - self.step_count
 
-    def __str__(self):
-        """
-        Produce a pretty string of the environment's grid along with the agent.
-        A grid cell is represented by 2-character string, the first one for
-        the object and the second one for the color.
-        """
-
-        # Map of object types to short string
-        OBJECT_TO_STR = {
-            'wall'          : 'W',
-            'floor'         : 'F',
-            'door'          : 'D',
-            'key'           : 'K',
-            'ball'          : 'A',
-            'box'           : 'B',
-            'goal'          : 'G',
-            'lava'          : 'V',
-        }
-
-        # Short string for opened door
-        OPENDED_DOOR_IDS = '_'
-
-        # Map agent's direction to short string
-        AGENT_DIR_TO_STR = {
-            0: '>',
-            1: 'V',
-            2: '<',
-            3: '^'
-        }
-
-        str = ''
-
-        for j in range(self.grid.height):
-
-            for i in range(self.grid.width):
-                if i == self.agent_pos[0] and j == self.agent_pos[1]:
-                    str += 2 * AGENT_DIR_TO_STR[self.agent_dir]
-                    continue
-
-                c = self.grid.get(i, j)
-
-                if c == None:
-                    str += '  '
-                    continue
-
-                if c.type == 'door':
-                    if c.is_open:
-                        str += '__'
-                    elif c.is_locked:
-                        str += 'L' + c.color[0].upper()
-                    else:
-                        str += 'D' + c.color[0].upper()
-                    continue
-
-                str += OBJECT_TO_STR[c.type] + c.color[0].upper()
-
-            if j < self.grid.height - 1:
-                str += '\n'
-
-        return str
-
     def _gen_grid(self, width, height):
         assert False, "_gen_grid needs to be implemented by each environment"
 
@@ -817,7 +713,7 @@ class MiniGridEnv(gym.Env):
         Compute the reward to be given upon success
         """
 
-        return 1 - 0.9 * (self.step_count / self.max_steps)
+        return 1-self.step_count/ self.max_steps
 
     def _rand_int(self, low, high):
         """
@@ -883,6 +779,17 @@ class MiniGridEnv(gym.Env):
             self.np_random.randint(yLow, yHigh)
         )
 
+    def place_obj_det(self,obj,i,j):
+        pos = np.array((i,j ))
+
+        self.grid.set(*pos, obj)
+
+        if obj is not None:
+            obj.init_pos = pos
+            obj.cur_pos = pos
+
+        return pos
+
     def place_obj(self,
         obj,
         top=None,
@@ -892,6 +799,7 @@ class MiniGridEnv(gym.Env):
     ):
         """
         Place an object at an empty position in the grid
+
         :param top: top-left position of the rectangle where to place
         :param size: size of the rectangle where to place
         :param reject_fn: function to filter out potential positions
@@ -926,6 +834,9 @@ class MiniGridEnv(gym.Env):
             if np.array_equal(pos, self.start_pos):
                 continue
 
+            if np.array_equal(pos, self.start_dpos):
+                continue
+
             # Check if there is a filtering criterion
             if reject_fn and reject_fn(self, pos):
                 continue
@@ -950,187 +861,201 @@ class MiniGridEnv(gym.Env):
         """
         Set the agent's starting point at an empty position in the grid
         """
-
+        self.start_dpos = None
         self.start_pos = None
         pos = self.place_obj(None, top, size, max_tries=max_tries)
         self.start_pos = pos
-
-        if rand_dir:
-            self.start_dir = self._rand_int(0, 4)
+        self.start_dpos = self.start_pos
 
         return pos
 
-    @property
-    def dir_vec(self):
-        """
-        Get the direction vector for the agent, pointing in the direction
-        of forward movement.
-        """
 
-        assert self.agent_dir >= 0 and self.agent_dir < 4
-        return DIR_TO_VEC[self.agent_dir]
-
-    @property
-    def right_vec(self):
-        """
-        Get the vector pointing to the right of the agent.
-        """
-
-        dx, dy = self.dir_vec
-        return np.array((-dy, dx))
-
-    @property
-    def front_pos(self):
-        """
-        Get the position of the cell that is right in front of the agent
-        """
-
-        return self.agent_pos + self.dir_vec
-
-    def get_view_coords(self, i, j):
-        """
-        Translate and rotate absolute grid coordinates (i, j) into the
-        agent's partially observable view (sub-grid). Note that the resulting
-        coordinates may be negative or outside of the agent's view size.
-        """
-
-        ax, ay = self.agent_pos
-        dx, dy = self.dir_vec
-        rx, ry = self.right_vec
-
-        # Compute the absolute coordinates of the top-left view corner
-        sz = AGENT_VIEW_SIZE
-        hs = AGENT_VIEW_SIZE // 2
-        tx = ax + (dx * (sz-1)) - (rx * hs)
-        ty = ay + (dy * (sz-1)) - (ry * hs)
-
-        lx = i - tx
-        ly = j - ty
-
-        # Project the coordinates of the object relative to the top-left
-        # corner onto the agent's own coordinate system
-        vx = (rx*lx + ry*ly)
-        vy = -(dx*lx + dy*ly)
-
-        return vx, vy
-
-    def get_view_exts(self):
-        """
-        Get the extents of the square set of tiles visible to the agent
-        Note: the bottom extent indices are not included in the set
-        """
-
-        # Facing right
-        if self.agent_dir == 0:
-            topX = self.agent_pos[0]
-            topY = self.agent_pos[1] - AGENT_VIEW_SIZE // 2
-        # Facing down
-        elif self.agent_dir == 1:
-            topX = self.agent_pos[0] - AGENT_VIEW_SIZE // 2
-            topY = self.agent_pos[1]
-        # Facing left
-        elif self.agent_dir == 2:
-            topX = self.agent_pos[0] - AGENT_VIEW_SIZE + 1
-            topY = self.agent_pos[1] - AGENT_VIEW_SIZE // 2
-        # Facing up
-        elif self.agent_dir == 3:
-            topX = self.agent_pos[0] - AGENT_VIEW_SIZE // 2
-            topY = self.agent_pos[1] - AGENT_VIEW_SIZE + 1
-        else:
-            assert False, "invalid agent direction"
-
-        botX = topX + AGENT_VIEW_SIZE
-        botY = topY + AGENT_VIEW_SIZE
-
-        return (topX, topY, botX, botY)
-
-    def relative_coords(self, x, y):
-        """
-        Check if a grid position belongs to the agent's field of view, and returns the corresponding coordinates
-        """
-
-        vx, vy = self.get_view_coords(x, y)
-
-        if vx < 0 or vy < 0 or vx >= AGENT_VIEW_SIZE or vy >= AGENT_VIEW_SIZE:
-            return None
-
-        return vx, vy
-
-    def in_view(self, x, y):
-        """
-        check if a grid position is visible to the agent
-        """
-
-        return self.relative_coords(x, y) is not None
-
-    def agent_sees(self, x, y):
-        """
-        Check if a non-empty grid position is visible to the agent
-        """
-
-        coordinates = self.relative_coords(x, y)
-        if coordinates is None:
-            return False
-        vx, vy = coordinates
-
-        obs = self.gen_obs()
-        obs_grid = Grid.decode(obs['image'])
-        obs_cell = obs_grid.get(vx, vy)
-        world_cell = self.grid.get(x, y)
-
-        return obs_cell is not None and obs_cell.type == world_cell.type
 
     def step(self, action):
         self.step_count += 1
 
-        reward = 0
+        reward=0
         done = False
 
+        if ((self.step_count%3)==0):
+            if(self.done_truck==0):
         # Get the position in front of the agent
-        fwd_pos = self.front_pos
+                fwd_pos =  self.agent_pos + np.array((0,1))
+                dwn_pos=fwd_pos+np.array((0,-2))
+                rgt_pos=fwd_pos+np.array((1,-1))
+                lft_pos=fwd_pos+np.array((-1,-1))
+                # Get the contents of the cell in front of the agent
+                fwd_cell = self.grid.get(*fwd_pos)
+                dwn_cell=self.grid.get(*dwn_pos)
+                rgt_cell=self.grid.get(*rgt_pos)
+                lft_cell=self.grid.get(*lft_pos)
+                # Rotate left
+                if action == self.actions.left:
+                    if lft_cell == None or lft_cell.can_overlap():
+                        self.agent_pos = lft_pos
+                    if lft_cell != None and lft_cell.type == 'goal':
+                        #done = True
+                        self.done_truck=1
+                        reward = self._reward()*0.2
+                    if lft_cell != None and lft_cell.type == 'customer':
+                        self.grid.set(*lft_pos, None)
+                        #done = True
+                        reward = self._reward()
 
-        # Get the contents of the cell in front of the agent
-        fwd_cell = self.grid.get(*fwd_pos)
+                # Rotate right
+                elif action == self.actions.right:
+                    if rgt_cell == None or rgt_cell.can_overlap():
+                        self.agent_pos = rgt_pos
+                    if rgt_cell != None and rgt_cell.type == 'goal':
+                        #done = True
+                        self.done_truck=1
+                        reward = self._reward()*0.2
+                    if rgt_cell != None and rgt_cell.type == 'customer':
+                        self.grid.set(*rgt_pos, None)
+                        #done = True
+                        reward = self._reward()
 
-        # Rotate left
-        if action == self.actions.left:
-            self.agent_dir -= 1
-            if self.agent_dir < 0:
-                self.agent_dir += 4
+                # Move forward
+                elif action == self.actions.forward:
+                    if fwd_cell == None or fwd_cell.can_overlap():
+                        self.agent_pos = fwd_pos
+                    if fwd_cell != None and fwd_cell.type == 'goal':
+                        #done = True
+                        self.done_truck=1
+                        reward = self._reward()*0.2
+                    if fwd_cell != None and fwd_cell.type == 'customer':
+                        #done = True
+                        self.grid.set(*fwd_pos, None)
+                        reward = self._reward()
 
-        # Rotate right
-        elif action == self.actions.right:
-            self.agent_dir = (self.agent_dir + 1) % 4
+                elif action == self.actions.downward:
+                    if dwn_cell == None or dwn_cell.can_overlap():
+                        self.agent_pos = dwn_pos
+                    if dwn_cell != None and dwn_cell.type == 'goal':
+                        #done = True
+                        self.done_truck=1
+                        reward = self._reward()*0.2
+                    if dwn_cell != None and dwn_cell.type == 'customer':
+                        #done = True
+                        self.grid.set(*dwn_pos, None)
 
-        # Move forward
-        elif action == self.actions.forward:
-            if fwd_cell == None or fwd_cell.can_overlap():
-                self.agent_pos = fwd_pos
-            if fwd_cell != None and fwd_cell.type == 'goal':
-                done = True
-                reward = self._reward()
-            if fwd_cell != None and fwd_cell.type == 'lava':
-                done = True
+                        reward = self._reward()
+        else :
+            if(self.done_drone==0):
+                fwd_pos =  self.drone_pos + np.array((0,1))
+                dwn_pos=fwd_pos+np.array((0,-2))
+                rgt_pos=fwd_pos+np.array((1,-1))
+                lft_pos=fwd_pos+np.array((-1,-1))
+                # Get the contents of the cell in front of the agent
+                fwd_cell = self.grid.get(*fwd_pos)
+                dwn_cell=self.grid.get(*dwn_pos)
+                rgt_cell=self.grid.get(*rgt_pos)
+                lft_cell=self.grid.get(*lft_pos)
+                # Rotate left
+                if action == self.actions.left:
+                    if lft_cell == None or lft_cell.can_overlap():
+                        self.drone_pos = lft_pos
+                    if lft_cell != None and lft_cell.type == 'goal':
+                        #done = True
+                        self.done_drone=1
+                        self.pack=0
+                        reward = self._reward()*0.2
+                    if lft_cell != None and lft_cell.type == 'customer' and self.pack==0:
+                        self.grid.set(*lft_pos, None)
+                        self.pack=1
+                        #done = True
+                        reward = self._reward()
 
+                # Rotate right
+                elif action == self.actions.right:
+                    if rgt_cell == None or rgt_cell.can_overlap():
+                        self.drone_pos = rgt_pos
+                    if rgt_cell != None and rgt_cell.type == 'goal':
+                        #done = True
+                        self.done_drone=1
+                        self.pack=0
+                        reward = self._reward()*0.2
+                    if rgt_cell != None and rgt_cell.type == 'customer' and self.pack==0:
+                        self.grid.set(*rgt_pos, None)
+                        self.pack=1
+
+                        #done = True
+                        reward = self._reward()
+
+                # Move forward
+                elif action == self.actions.forward:
+                    if fwd_cell == None or fwd_cell.can_overlap():
+                        self.drone_pos = fwd_pos
+                    if fwd_cell != None and fwd_cell.type == 'goal':
+                        #done = True
+                        self.done_drone=1
+                        self.pack=0
+                        reward = self._reward()*0.2
+                    if fwd_cell != None and fwd_cell.type == 'customer' and self.pack==0:
+                        #done = True
+                        self.grid.set(*fwd_pos, None)
+                        self.pack=1
+                        reward = self._reward()
+
+                elif action == self.actions.downward:
+                    if dwn_cell == None or dwn_cell.can_overlap():
+                        self.drone_pos = dwn_pos
+                    if dwn_cell != None and dwn_cell.type == 'goal':
+                        #done = True
+                        self.done_drone=1
+                        self.pack=0
+                        reward = self._reward()*0.2
+                    if dwn_cell != None and dwn_cell.type == 'customer' and self.pack==0:
+                        #done = True
+                        self.grid.set(*dwn_pos, None)
+                        self.pack=1
+
+                        reward = self._reward()
         # Pick up an object
+        if ((self.step_count%30)==0):
+
+            objs = []
+            objPos = []
+
+            def near_obj(env, p1):
+                for p2 in objPos:
+                    dx = p1[0] - p2[0]
+                    dy = p1[1] - p2[1]
+                    if abs(dx) <= 1 and abs(dy) <= 1:
+                        return True
+                return False
+
+
+            objType = 'customer'
+            objColor = 'grey'
+
+                    # If this object already exists, try again
+            obj = Customer(objColor)
+
+            pos_temp = self.place_obj(obj,reject_fn=near_obj)
+
+        if(self.agent_pos[0]==self.drone_pos[0] and self.agent_pos[1]==self.drone_pos[1]):
+            self.drone_endu=self.max_endu
+            self.pack=0
+        else :
+            self.drone_endu -=1
+
+        if(self.drone_endu<0  and self.done_drone==0):
+            reward =self.drone_endu/self.max_endu *0.5
+
+        if(self.done_truck==1 and self.done_drone==1):
+            done=True
+        """
         elif action == self.actions.pickup:
             if fwd_cell and fwd_cell.can_pickup():
                 if self.carrying is None:
                     self.carrying = fwd_cell
                     self.carrying.cur_pos = np.array([-1, -1])
                     self.grid.set(*fwd_pos, None)
-
-        # Drop an object
-        elif action == self.actions.drop:
-            if not fwd_cell and self.carrying:
-                self.grid.set(*fwd_pos, self.carrying)
-                self.carrying.cur_pos = fwd_pos
-                self.carrying = None
-
-        # Toggle/activate an object
-        elif action == self.actions.toggle:
-            if fwd_cell:
-                fwd_cell.toggle(self, fwd_pos)
+                    reward = self._reward()
+        elif action ==self.actions.visit:
+            if fwd_cell and fwd_cell.can_visit():
+                self.grid.set(*fwd_pos, None)
 
         # Done action (not used by default)
         elif action == self.actions.done:
@@ -1138,57 +1063,31 @@ class MiniGridEnv(gym.Env):
 
         else:
             assert False, "unknown action"
-
+        """
         if self.step_count >= self.max_steps:
+            reward = -3#self._reward()-1
             done = True
+
+        print(reward )
+
+
 
         obs = self.gen_obs()
 
-        return obs, reward, done, {}
+        return obs, reward, done,{}
 
-    def gen_obs_grid(self):
-        """
-        Generate the sub-grid observed by the agent.
-        This method also outputs a visibility mask telling us which grid
-        cells the agent can actually see.
-        """
-
-        topX, topY, botX, botY = self.get_view_exts()
-
-        grid = self.grid.slice(topX, topY, AGENT_VIEW_SIZE, AGENT_VIEW_SIZE)
-
-        for i in range(self.agent_dir + 1):
-            grid = grid.rotate_left()
-
-        # Process occluders and visibility
-        # Note that this incurs some performance cost
-        if not self.see_through_walls:
-            vis_mask = grid.process_vis(agent_pos=(AGENT_VIEW_SIZE // 2 , AGENT_VIEW_SIZE - 1))
-        else:
-            vis_mask = np.ones(shape=(grid.width, grid.height), dtype=np.bool)
-
-        # Make it so the agent sees what it's carrying
-        # We do this by placing the carried object at the agent's position
-        # in the agent's partially observable view
-        agent_pos = grid.width // 2, grid.height - 1
-        if self.carrying:
-            grid.set(*agent_pos, self.carrying)
-        else:
-            grid.set(*agent_pos, None)
-
-        return grid, vis_mask
 
     def gen_obs(self):
         """
         Generate the agent's view (partially observable, low-resolution encoding)
         """
 
-        grid, vis_mask = self.gen_obs_grid()
+        #grid, vis_mask = self.gen_obs_grid()
 
         # Encode the partially observable view into a numpy array
-        image = grid.encode(vis_mask)
+        image = self.grid.encode(self.agent_pos,self.drone_pos)
 
-        assert hasattr(self, 'mission'), "environments must define a textual mission string"
+        #assert hasattr(self, 'mission'), "environments must define a textual mission string"
 
         # Observations are dictionaries containing:
         # - an image (partially observable view of the environment)
@@ -1196,54 +1095,14 @@ class MiniGridEnv(gym.Env):
         # - a textual mission string (instructions for the agent)
         obs = {
             'image': image,
-            'direction': self.agent_dir,
+            #'direction': self.agent_dir,
             'mission': self.mission
         }
-
+        #obs=image
+        #print(obs.shape)
+        #return self.render(mode='rgb_array')
         return obs
 
-    def get_obs_render(self, obs, tile_pixels=CELL_PIXELS//2):
-        """
-        Render an agent observation for visualization
-        """
-
-        if self.obs_render == None:
-            from gym_minigrid.rendering import Renderer
-            self.obs_render = Renderer(
-                AGENT_VIEW_SIZE * tile_pixels,
-                AGENT_VIEW_SIZE * tile_pixels
-            )
-
-        r = self.obs_render
-
-        r.beginFrame()
-
-        grid = Grid.decode(obs)
-
-        # Render the whole grid
-        grid.render(r, tile_pixels)
-
-        # Draw the agent
-        ratio = tile_pixels / CELL_PIXELS
-        r.push()
-        r.scale(ratio, ratio)
-        r.translate(
-            CELL_PIXELS * (0.5 + AGENT_VIEW_SIZE // 2),
-            CELL_PIXELS * (AGENT_VIEW_SIZE - 0.5)
-        )
-        r.rotate(3 * 90)
-        r.setLineColor(255, 0, 0)
-        r.setColor(255, 0, 0)
-        r.drawPolygon([
-            (-12, 10),
-            ( 12,  0),
-            (-12, -10)
-        ])
-        r.pop()
-
-        r.endFrame()
-
-        return r.getPixmap()
 
     def render(self, mode='human', close=False):
         """
@@ -1265,56 +1124,76 @@ class MiniGridEnv(gym.Env):
 
         r = self.grid_render
 
-
-
         r.beginFrame()
 
         # Render the whole grid
         self.grid.render(r, CELL_PIXELS)
 
-        # Draw the agent
-        r.push()
-        r.translate(
-            CELL_PIXELS * (self.agent_pos[0] + 0.5),
-            CELL_PIXELS * (self.agent_pos[1] + 0.5)
-        )
-        r.rotate(self.agent_dir * 90)
-        r.setLineColor(255, 0, 0)
-        r.setColor(255, 0, 0)
-        r.drawPolygon([
-            (-12, 10),
-            ( 12,  0),
-            (-12, -10)
-        ])
-        r.pop()
+        # Draw the agent\
+        if (self.agent_pos[0]==self.drone_pos[0] and self.agent_pos[1]==self.drone_pos[1] ):
+            r.push()
+            r.translate(
+                CELL_PIXELS * (self.agent_pos[0] + 0.5),
+                CELL_PIXELS * (self.agent_pos[1] + 0.5)
+            )
+            #r.rotate(self.agent_dir * 90)
+            r.setLineColor(255, 0, 0)
+            r.setColor(255, 0, 100)
 
-        # Compute which cells are visible to the agent
-        _, vis_mask = self.gen_obs_grid()
+            r.drawPolygon([
+                    (-12, 12),
+                    ( 6,  12),
+                    (6,-12),
+                    (-12, -12)
+            ])
 
-        # Compute the absolute coordinates of the bottom-left corner
-        # of the agent's view area
-        f_vec = self.dir_vec
-        r_vec = self.right_vec
-        top_left = self.agent_pos + f_vec * (AGENT_VIEW_SIZE-1) - r_vec * (AGENT_VIEW_SIZE // 2)
+            r.drawPolygon([
+                (6, 8),
+                ( 12,  8),
+                (12,-8),
+                (6, -8)
+            ])
+            r.pop()
+        else :
+            r.push()
+            r.translate(
+                CELL_PIXELS * (self.agent_pos[0] + 0.5),
+                CELL_PIXELS * (self.agent_pos[1] + 0.5)
+            )
+            #r.rotate(self.agent_dir * 90)
+            r.setLineColor(255, 0, 0)
+            r.setColor(255, 0, 0)
+            r.drawPolygon([
+                    (-12, 12),
+                    ( 6,  12),
+                    (6,-12),
+                    (-12, -12)
+            ])
 
-        # For each cell in the visibility mask
-        for vis_j in range(0, AGENT_VIEW_SIZE):
-            for vis_i in range(0, AGENT_VIEW_SIZE):
-                # If this cell is not visible, don't highlight it
-                if not vis_mask[vis_i, vis_j]:
-                    continue
+            r.drawPolygon([
+                (6, 8),
+                ( 12,  8),
+                (12,-8),
+                (6, -8)
+            ])
+            r.pop()
 
-                # Compute the world coordinates of this cell
-                abs_i, abs_j = top_left - (f_vec * vis_j) + (r_vec * vis_i)
+            r.push()
+            r.translate(
+                CELL_PIXELS * (self.drone_pos[0] + 0.5),
+                CELL_PIXELS * (self.drone_pos[1] + 0.5)
+            )
+            #r.rotate(self.agent_dir * 90)
+            r.setLineColor(255, 0, 0)
+            r.setColor(255, 100, 0)
+            r.drawPolygon([
+                (-12, 12),
+                ( 12,  12),
+                (-12,-12),
+                (12, -12)
+            ])
+            r.pop()
 
-                # Highlight the cell
-                r.fillRect(
-                    abs_i * CELL_PIXELS,
-                    abs_j * CELL_PIXELS,
-                    CELL_PIXELS,
-                    CELL_PIXELS,
-                    255, 255, 255, 75
-                )
 
         r.endFrame()
 

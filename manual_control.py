@@ -49,9 +49,11 @@ def main():
         elif keyName == 'RIGHT':
             action = env.actions.right
         elif keyName == 'UP':
-            action = env.actions.forward
-        elif keyName == 'DOWN':
             action = env.actions.downward
+        elif keyName == 'DOWN':
+            action = env.actions.forward
+        elif keyName == 'SPACE':
+            action = env.actions.stop    
 
         else:
             print("unknown key %s" % keyName)
