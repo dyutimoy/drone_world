@@ -1068,7 +1068,7 @@ class MiniGridEnv(gym.Env):
             reward = -3#self._reward()-1
             done = True
 
-        print(reward )
+        #print(reward )
 
 
 
@@ -1098,10 +1098,10 @@ class MiniGridEnv(gym.Env):
             #'direction': self.agent_dir,
             'mission': self.mission
         }
-        #obs=image
+        obs=image
         #print(obs.shape)
-        #return self.render(mode='rgb_array')
-        return obs
+        return self.render(mode='rgb_array')
+        #return obs
 
 
     def render(self, mode='human', close=False):
